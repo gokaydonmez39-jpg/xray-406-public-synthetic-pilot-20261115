@@ -1,0 +1,32 @@
+name: XRAY 406 Synthetic Ref Policy CI
+on:
+  push:
+    branches: ['pilot-ci-green', 'pilot-ci-red']
+permissions:
+  contents: read
+jobs:
+  synthetic:
+    if: github.repository == 'gokaydonmez39-jpg/xray-406-public-synthetic-pilot-20261115' && github.event_name == 'push'
+    name: xray-406-pilot-required-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Bind synthetic marker to the exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$GITHUB_RUN_ATTEMPT" = 1
+          case "$GITHUB_REF:$(cat fixture.txt)" in
+            refs/heads/pilot-ci-green:GREEN)
+              echo 'XRAY406_SYNTHETIC_GREEN' ;;
+            refs/heads/pilot-ci-red:RED)
+              echo 'XRAY406_SYNTHETIC_RED_EXPECTED'
+              exit 1 ;;
+            *)
+              echo 'XRAY406_SYNTHETIC_FIXTURE_MISMATCH'
+              exit 2 ;;
+          esac
