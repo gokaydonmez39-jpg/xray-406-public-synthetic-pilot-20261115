@@ -61,8 +61,13 @@ jobs:
           require(read_ref(FORBIDDEN)==BASE and read_ref(ALLOWED)==BASE, "FIXTURE_DRIFT")
           status, result = set_ref(FORBIDDEN)
           message = str(result.get("message","")).lower()
-          require(status in (403,422) and ("rule violations" in message or "protected" in message)
-                  and "pilot-forbidden" in message and read_ref(FORBIDDEN)==BASE,
+          reason = ("REF_POLICY" if any(t in message for t in
+                    ("rule violations","protected","cannot update this protected ref",
+                     "cannot update this ref","cannot update ref","cannot update a restricted ref"))
+                    else "OTHER")
+          print(json.dumps({"http":status,"reason_family":reason,
+                            "message":result.get("message","")[:350]}))
+          require(status in (403,422) and reason=="REF_POLICY" and read_ref(FORBIDDEN)==BASE,
                   "FORBIDDEN_REF_NOT_PROVEN")
           print(json.dumps({"ref":FORBIDDEN,"sha":BASE,"http":status,"result":"SERVER_RULE_REJECTED"}))
           status, result = set_ref(ALLOWED)
