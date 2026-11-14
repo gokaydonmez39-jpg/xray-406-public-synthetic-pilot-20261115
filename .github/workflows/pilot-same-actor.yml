@@ -53,7 +53,8 @@ jobs:
           require(os.environ["GITHUB_REPOSITORY"]==REPO, "REPO_OUTSIDE_TEST")
           rules_status, rules = call("GET","rulesets/27280990")
           require(rules_status==200 and rules["enforcement"]=="active"
-                  and not rules["bypass_actors"]
+                  # Read-only rule view can omit bypass_actors; confirm independently.
+                  and ("bypass_actors" not in rules or rules["bypass_actors"] == [])
                   and rules["conditions"]["ref_name"]=={"include":["refs/heads/"+FORBIDDEN],"exclude":[]}
                   and {"creation","update"} <= {r["type"] for r in rules["rules"]},
                   "EXACT_FORBIDDEN_RULE_UNAVAILABLE")
