@@ -1,7 +1,7 @@
 name: XRAY 406 Synthetic Ref Policy CI
 on:
   push:
-    branches: ['pilot-ci-green', 'pilot-ci-red']
+    branches: ['pilot-ci-green-2', 'pilot-ci-red-2']
 permissions:
   contents: read
 jobs:
@@ -20,10 +20,10 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test "$GITHUB_RUN_ATTEMPT" = 1
-          case "$GITHUB_REF:$(cat fixture.txt)" in
-            refs/heads/pilot-ci-green:GREEN)
+          case "$GITHUB_REF:$(cat second-fixture.txt)" in
+            refs/heads/pilot-ci-green-2:GREEN)
               echo 'XRAY406_SYNTHETIC_GREEN' ;;
-            refs/heads/pilot-ci-red:RED)
+            refs/heads/pilot-ci-red-2:RED)
               echo 'XRAY406_SYNTHETIC_RED_EXPECTED'
               exit 1 ;;
             *)
