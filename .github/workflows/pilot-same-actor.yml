@@ -23,8 +23,12 @@ jobs:
           import urllib.request
 
           REPO = "gokaydonmez39-jpg/xray-406-public-synthetic-pilot-20261115"
-          BASE = "763e977ded153d51beefd3306e8eefd72926c24a"
+          BASE = "e61ad2b0d507462d6c5b14129bed30fed4270aa2"
           GREEN = "e61ad2b0d507462d6c5b14129bed30fed4270aa2"
+          SECOND_RED = "c1c86b7840a93824e32ba43e12cf4e98f1336ff6"
+          SECOND_GREEN = "562a4af03302889063b9c98e7d9cd7fb99624ce4"
+          PROTECTED = "pilot-protected"
+          FIRST_BASE = "763e977ded153d51beefd3306e8eefd72926c24a"
           ALLOWED = "pilot-allowed"
           FORBIDDEN = "pilot-forbidden"
           HOST = "https://api.github.com/repos/" + REPO + "/"
@@ -46,9 +50,9 @@ jobs:
               status, data = call("GET","git/ref/heads/"+ref)
               require(status==200, "REF_READ_UNAVAILABLE")
               return data["object"]["sha"]
-          def set_ref(ref):
-              require(ref in (ALLOWED, FORBIDDEN), "REF_OUTSIDE_TEST")
-              return call("PATCH","git/refs/heads/"+ref,{"sha":GREEN,"force":False})
+          def set_ref(ref, head):
+              require(ref in (ALLOWED, FORBIDDEN, PROTECTED), "REF_OUTSIDE_TEST")
+              return call("PATCH","git/refs/heads/"+ref,{"sha":head,"force":False})
 
           require(os.environ["GITHUB_REPOSITORY"]==REPO, "REPO_OUTSIDE_TEST")
           rules_status, rules = call("GET","rulesets/27280990")
@@ -58,21 +62,41 @@ jobs:
                   and rules["conditions"]["ref_name"]=={"include":["refs/heads/"+FORBIDDEN],"exclude":[]}
                   and {"creation","update"} <= {r["type"] for r in rules["rules"]},
                   "EXACT_FORBIDDEN_RULE_UNAVAILABLE")
-          require(read_ref(FORBIDDEN)==BASE and read_ref(ALLOWED)==BASE, "FIXTURE_DRIFT")
-          status, result = set_ref(FORBIDDEN)
-          message = str(result.get("message","")).lower()
-          reason = ("REF_POLICY" if any(t in message for t in
-                    ("rule violations","protected","cannot update this protected ref",
-                     "cannot update this ref","cannot update ref","cannot update a restricted ref"))
-                    else "OTHER")
-          print(json.dumps({"http":status,"reason_family":reason,
-                            "message":result.get("message","")[:350]}))
-          require(status in (403,422) and reason=="REF_POLICY" and read_ref(FORBIDDEN)==BASE,
-                  "FORBIDDEN_REF_NOT_PROVEN")
-          print(json.dumps({"ref":FORBIDDEN,"sha":BASE,"http":status,"result":"SERVER_RULE_REJECTED"}))
-          status, result = set_ref(ALLOWED)
-          require(status==200 and result["object"]["sha"]==GREEN
-                  and read_ref(ALLOWED)==GREEN and read_ref(FORBIDDEN)==BASE,
-                  "ALLOWED_REF_NOT_PROVEN")
-          print(json.dumps({"ref":ALLOWED,"sha":GREEN,"http":status,"result":"SERVER_ACCEPTED"}))
+          require(read_ref(FORBIDDEN)==FIRST_BASE and read_ref(ALLOWED)==BASE
+                  and read_ref(PROTECTED)==BASE, "FIXTURE_DRIFT")
+
+          exact_status, exact_rule = call("GET","rulesets/27280935")
+          exact = {"context":"xray-406-pilot-required-ci","integration_id":15368}
+          require(exact_status==200 and exact_rule["enforcement"]=="active"
+                  and ("bypass_actors" not in exact_rule or exact_rule["bypass_actors"] == [])
+                  and exact_rule["conditions"]["ref_name"]=={"include":["refs/heads/"+PROTECTED],"exclude":[]}
+                  and any(r["type"]=="required_status_checks" and
+                          r["parameters"]["required_status_checks"]==[exact]
+                          for r in exact_rule["rules"]), "EXACT_CI_RULE_UNAVAILABLE")
+          for candidate, expected in ((SECOND_RED, "failure"), (SECOND_GREEN, "success")):
+              s, rows = call("GET","commits/"+candidate+"/check-runs")
+              found = [i for i in rows["check_runs"] if i["head_sha"]==candidate
+                       and i["name"]==exact["context"] and i["app"]["id"]==15368]
+              require(s==200 and len(found)==1 and found[0]["status"]=="completed"
+                      and found[0]["conclusion"]==expected, "CHECK_NOT_EXACT")
+
+          status, denied = set_ref(FORBIDDEN, SECOND_GREEN)
+          require(status==422 and "cannot update this protected ref" in denied["message"].lower()
+                  and read_ref(FORBIDDEN)==FIRST_BASE, "FORBIDDEN_NOT_REJECTED")
+          print(json.dumps({"gate":"FORBIDDEN_REF", "http":status,"result":"SERVER_REJECTED"}))
+          status, published = set_ref(ALLOWED, SECOND_GREEN)
+          require(status==200 and published["object"]["sha"]==SECOND_GREEN
+                  and read_ref(ALLOWED)==SECOND_GREEN, "ALLOWED_NOT_WRITTEN")
+          print(json.dumps({"gate":"ALLOWED_REF", "http":status,"result":"SERVER_ACCEPTED"}))
+          status, denied = set_ref(PROTECTED, SECOND_RED)
+          message=denied.get("message","").lower()
+          require(status==422 and "xray-406-pilot-required-ci" in message
+                  and ("failing" in message or "failed" in message)
+                  and read_ref(PROTECTED)==BASE, "RED_NOT_REJECTED")
+          print(json.dumps({"gate":"RED_CI","http":status,"result":"SERVER_REJECTED"}))
+          status, published = set_ref(PROTECTED, SECOND_GREEN)
+          require(status==200 and published["object"]["sha"]==SECOND_GREEN
+                  and read_ref(PROTECTED)==SECOND_GREEN and read_ref(FORBIDDEN)==FIRST_BASE,
+                  "GREEN_NOT_WRITTEN")
+          print(json.dumps({"gate":"GREEN_CI","http":status,"result":"SERVER_ACCEPTED"}))
           PY
